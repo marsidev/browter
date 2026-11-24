@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests
+        run: swift test
+
+      - name: Build universal app bundle
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ./build.sh --universal --no-install --version "$VERSION"
+
+      - name: Package zip and checksum
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARCHIVE="Browter-${VERSION}-macos.zip"
+          ditto -c -k --sequesterRsrc --keepParent build/Browter.app "build/${ARCHIVE}"
+          (cd build && shasum -a 256 "${ARCHIVE}" > "${ARCHIVE}.sha256")
+          cat "build/${ARCHIVE}.sha256"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARCHIVE="Browter-${VERSION}-macos.zip"
+          gh release create "$GITHUB_REF_NAME" \
+            "build/${ARCHIVE}" \
+            "build/${ARCHIVE}.sha256" \
+            --title "Browter ${GITHUB_REF_NAME}" \
+            --generate-notes

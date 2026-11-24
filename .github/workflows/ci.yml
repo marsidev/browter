@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-and-build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests
+        run: swift test
+
+      - name: Build universal app bundle
+        run: ./build.sh --universal --no-install
+
+      - name: Verify CLI check against example config
+        run: |
+          BROWTER_CONFIG=config.example.json ./build/Browter.app/Contents/MacOS/Browter --test https://github.com/acme/repo
+          BROWTER_CONFIG=config.example.json ./build/Browter.app/Contents/MacOS/Browter --version

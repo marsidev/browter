@@ -1,0 +1,24 @@
+{
+  "fallback": "com.brave.Browser",
+  "unwrapSafeLinks": true,
+  "routes": [
+    {
+      "browser": "com.google.Chrome",
+      "profile": "Profile 1",
+      "domains": [
+        "github.com/acme",
+        "github.com/orgs/acme",
+        "*.azure.com",
+        "*.microsoft.com",
+        "*.microsoftonline.com",
+        ".microsoft",
+        "*.office.com",
+        "*.sharepoint.com",
+        "*.outlook.com"
+      ],
+      "patterns": [
+        "^https?://(login|sts)\\.windows\\.net(:[0-9]+)?(/|$|\\?|#)"
+      ]
+    }
+  ]
+}
