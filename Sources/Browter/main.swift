@@ -101,6 +101,71 @@ func resolveApplication(for spec: String) -> ResolvedApp? {
     return nil
 }
 
+// MARK: - Profile Discovery
+
+struct DiscoveredProfile {
+    let directory: String
+    let displayName: String
+}
+
+func discoverBrowserProfiles() -> [(browser: String, bundleID: String, profiles: [DiscoveredProfile])] {
+    let appSupport = NSHomeDirectory() + "/Library/Application Support"
+    var results: [(String, String, [DiscoveredProfile])] = []
+
+    let chromiumBrowsers: [(name: String, bundleID: String, relPath: String)] = [
+        ("Google Chrome", "com.google.Chrome", "Google/Chrome/Local State"),
+        ("Google Chrome Beta", "com.google.Chrome.beta", "Google/Chrome Beta/Local State"),
+        ("Google Chrome Canary", "com.google.Chrome.canary", "Google/Chrome Canary/Local State"),
+        ("Brave Browser", "com.brave.Browser", "BraveSoftware/Brave-Browser/Local State"),
+        ("Microsoft Edge", "com.microsoft.edgemac", "Microsoft Edge/Local State"),
+        ("Vivaldi", "com.vivaldi.Vivaldi", "Vivaldi/Local State"),
+        ("Chromium", "org.chromium.Chromium", "Chromium/Local State"),
+    ]
+
+    for browser in chromiumBrowsers {
+        let path = "\(appSupport)/\(browser.relPath)"
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let profileDict = json["profile"] as? [String: Any],
+              let infoCache = profileDict["info_cache"] as? [String: [String: Any]] else {
+            continue
+        }
+        let profiles = infoCache.keys.sorted().map { dir -> DiscoveredProfile in
+            let meta = infoCache[dir] ?? [:]
+            let name = (meta["name"] as? String) ?? dir
+            return DiscoveredProfile(directory: dir, displayName: name)
+        }
+        if !profiles.isEmpty {
+            results.append((browser.name, browser.bundleID, profiles))
+        }
+    }
+
+    let firefoxBrowsers: [(name: String, bundleID: String, relPath: String)] = [
+        ("Firefox", "org.mozilla.firefox", "Firefox/profiles.ini"),
+        ("Zen Browser", "app.zen-browser.zen", "zen/profiles.ini"),
+    ]
+
+    for browser in firefoxBrowsers {
+        let path = "\(appSupport)/\(browser.relPath)"
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+        var profiles: [DiscoveredProfile] = []
+        for line in text.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("Name=") {
+                let name = String(trimmed.dropFirst("Name=".count))
+                if !name.isEmpty {
+                    profiles.append(DiscoveredProfile(directory: name, displayName: name))
+                }
+            }
+        }
+        if !profiles.isEmpty {
+            results.append((browser.name, browser.bundleID, profiles))
+        }
+    }
+
+    return results
+}
+
 // MARK: - Route Coordinator
 
 final class RouteCoordinator: @unchecked Sendable {
@@ -425,31 +490,214 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 // MARK: - CLI Utilities
 
+func printHelp(configPath: String) {
+    print("""
+    Usage: browter <command> [options]
+
+    Commands:
+      init [--force]                                    Create starter config file
+      list                                              Show current fallback and routes
+      add <rule> --browser <app> [--profile <p>] [--regex]
+                                                        Add a domain or regex rule
+      remove <rule>                                     Remove a domain or regex rule
+      profiles                                          List installed browser profiles
+      check                                             Validate config and resolved browsers
+      test <url>                                        Show which browser would open <url>
+      edit                                              Open config in $EDITOR (or default app)
+      version                                           Print version
+      help                                              Show this help
+
+    Config file: \(configPath) (override with BROWTER_CONFIG)
+    """)
+}
+
 func runCLI(args: [String], configPath: String) -> Int32? {
-    if args.contains("--help") || args.contains("-h") {
-        print("""
-        Usage: Browter [options]
+    guard let first = args.first else { return nil }
+    let rest = Array(args.dropFirst())
 
-        Options:
-          --check        Validate config file and resolved browsers
-          --test <url>   Show which browser/profile would open <url>
-          --version      Print version
-          --help         Show this help
-
-        Config file: \(configPath) (override with BROWTER_CONFIG)
-        """)
+    switch first {
+    case "help", "--help", "-h":
+        printHelp(configPath: configPath)
         return 0
-    }
 
-    if args.contains("--version") {
+    case "version", "--version", "-v":
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
         print("Browter \(version)")
         return 0
-    }
 
-    if args.contains("--check") {
+    case "init":
+        let force = rest.contains("--force")
+        if FileManager.default.fileExists(atPath: configPath) && !force {
+            fputs("Config already exists at \(configPath) (pass --force to overwrite)\n", stderr)
+            return 1
+        }
+        let starter = BrowterConfig(
+            schema: BrowterConfig.defaultSchemaURL,
+            fallback: BrowterConfig.defaultFallback,
+            unwrapSafeLinks: true,
+            routes: []
+        )
+        do {
+            try starter.save(to: configPath)
+            print("Created \(configPath)")
+            return 0
+        } catch {
+            fputs("error: \(error.localizedDescription)\n", stderr)
+            return 1
+        }
+
+    case "list":
         guard FileManager.default.fileExists(atPath: configPath) else {
-            fputs("error: config file not found at \(configPath)\n", stderr)
+            fputs("error: config not found at \(configPath) (run 'browter init')\n", stderr)
+            return 1
+        }
+        do {
+            let config = try BrowterConfig.load(from: configPath)
+            print("Config: \(configPath)")
+            print("Fallback: \(config.fallback)")
+            print("Unwrap SafeLinks: \(config.unwrapSafeLinks)")
+            if config.routes.isEmpty {
+                print("Routes: (none)")
+            } else {
+                print("Routes:")
+                for (i, r) in config.routes.enumerated() {
+                    let prof = r.profile.map { " [\($0)]" } ?? ""
+                    print("  [\(i)] \(r.browser)\(prof)")
+                    for d in r.domains { print("      domain:  \(d)") }
+                    for p in r.patterns { print("      pattern: \(p)") }
+                }
+            }
+            return 0
+        } catch {
+            fputs("error: \(error.localizedDescription)\n", stderr)
+            return 1
+        }
+
+    case "add":
+        guard let rule = rest.first, !rule.hasPrefix("-") else {
+            fputs("usage: browter add <domain-or-pattern> --browser <app> [--profile <name>] [--regex]\n", stderr)
+            return 2
+        }
+        var browser: String?
+        var profile: String?
+        var isRegex = false
+        var i = 1
+        while i < rest.count {
+            switch rest[i] {
+            case "--browser", "-b":
+                if i + 1 < rest.count { browser = rest[i + 1]; i += 2 } else { i += 1 }
+            case "--profile", "-p":
+                if i + 1 < rest.count { profile = rest[i + 1]; i += 2 } else { i += 1 }
+            case "--regex", "-r":
+                isRegex = true; i += 1
+            default:
+                fputs("unknown option: \(rest[i])\n", stderr)
+                return 2
+            }
+        }
+        guard let browser, !browser.isEmpty else {
+            fputs("error: --browser is required\n", stderr)
+            return 2
+        }
+        if isRegex {
+            do {
+                _ = try NSRegularExpression(pattern: rule, options: [.caseInsensitive])
+            } catch {
+                fputs("error: invalid regex '\(rule)': \(error.localizedDescription)\n", stderr)
+                return 1
+            }
+        }
+        var config: BrowterConfig
+        if FileManager.default.fileExists(atPath: configPath) {
+            do {
+                config = try BrowterConfig.load(from: configPath)
+            } catch {
+                fputs("error: \(error.localizedDescription)\n", stderr)
+                return 1
+            }
+        } else {
+            config = BrowterConfig(schema: BrowterConfig.defaultSchemaURL)
+        }
+        let added = config.addRule(rule, browser: browser, profile: profile, isRegex: isRegex)
+        if !added {
+            print("Already configured: \(rule)")
+            return 0
+        }
+        do {
+            try config.save(to: configPath)
+            let prof = profile.map { " [\($0)]" } ?? ""
+            print("Added \(isRegex ? "pattern" : "domain") '\(rule)' -> \(browser)\(prof)")
+            return 0
+        } catch {
+            fputs("error: \(error.localizedDescription)\n", stderr)
+            return 1
+        }
+
+    case "remove", "rm":
+        guard let rule = rest.first, !rule.isEmpty else {
+            fputs("usage: browter remove <domain-or-pattern>\n", stderr)
+            return 2
+        }
+        do {
+            var config = try BrowterConfig.load(from: configPath)
+            let count = config.removeRule(rule)
+            if count == 0 {
+                fputs("Not found: \(rule)\n", stderr)
+                return 1
+            }
+            try config.save(to: configPath)
+            print("Removed \(count) matching rule(s) for '\(rule)'")
+            return 0
+        } catch {
+            fputs("error: \(error.localizedDescription)\n", stderr)
+            return 1
+        }
+
+    case "profiles":
+        let discovered = discoverBrowserProfiles()
+        if discovered.isEmpty {
+            print("No Chromium or Firefox profiles found.")
+            return 0
+        }
+        for entry in discovered {
+            print("\(entry.browser) (\(entry.bundleID)):")
+            for p in entry.profiles {
+                if p.directory == p.displayName {
+                    print("  \(p.directory)")
+                } else {
+                    print("  \(p.directory)  (\(p.displayName))")
+                }
+            }
+        }
+        return 0
+
+    case "edit":
+        if !FileManager.default.fileExists(atPath: configPath) {
+            fputs("Config not found at \(configPath). Run 'browter init' first.\n", stderr)
+            return 1
+        }
+        let editor = ProcessInfo.processInfo.environment["VISUAL"]
+            ?? ProcessInfo.processInfo.environment["EDITOR"]
+        let process = Process()
+        if let editor, !editor.isEmpty {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = [editor, configPath]
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            process.arguments = ["-t", configPath]
+        }
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus
+        } catch {
+            fputs("error: \(error.localizedDescription)\n", stderr)
+            return 1
+        }
+
+    case "check", "--check":
+        guard FileManager.default.fileExists(atPath: configPath) else {
+            fputs("error: config file not found at \(configPath) (run 'browter init')\n", stderr)
             return 1
         }
         do {
@@ -472,14 +720,12 @@ func runCLI(args: [String], configPath: String) -> Int32? {
             fputs("error: \(error.localizedDescription)\n", stderr)
             return 1
         }
-    }
 
-    if let idx = args.firstIndex(of: "--test") {
-        guard idx + 1 < args.count else {
-            fputs("usage: Browter --test <url>\n", stderr)
+    case "test", "--test":
+        guard let testURL = rest.first, !testURL.isEmpty else {
+            fputs("usage: browter test <url>\n", stderr)
             return 2
         }
-        let testURL = args[idx + 1]
         let config = (try? BrowterConfig.load(from: configPath)) ?? BrowterConfig()
         let router = CompiledRouter(config: config)
         let decision = router.decide(rawURL: testURL)
@@ -494,9 +740,10 @@ func runCLI(args: [String], configPath: String) -> Int32? {
             print("match: fallback browser=\(browser)")
         }
         return 0
-    }
 
-    return nil
+    default:
+        return nil
+    }
 }
 
 // MARK: - Entry Point

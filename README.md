@@ -39,17 +39,13 @@ This builds `build/Browter.app`, ad-hoc signs it, installs it to `~/Applications
 
 ## Configuration
 
-Copy [config.example.json](config.example.json) to `~/.config/browter/config.json`:
+Run `browter init` (or copy [config.example.json](config.example.json) to `~/.config/browter/config.json`).
 
-```sh
-mkdir -p ~/.config/browter
-cp config.example.json ~/.config/browter/config.json
-```
-
-Example `~/.config/browter/config.json`:
+Example `~/.config/browter/config.json` (includes `$schema` for autocompletion and validation in VS Code, Cursor, Zed, and JetBrains):
 
 ```json
 {
+  "$schema": "https://raw.githubusercontent.com/marsidev/browter/main/config.schema.json",
   "fallback": "com.brave.Browser",
   "unwrapSafeLinks": true,
   "routes": [
@@ -92,14 +88,23 @@ Override the config path with `BROWTER_CONFIG=/path/to/config.json` or `defaults
 System Settings -> Desktop & Dock -> Default web browser -> **Browter**.
 Pick any other browser there to switch back at any time.
 
-## Testing & Debugging
+## CLI
 
-Validate your config and check which browser a URL would match without opening anything:
+When installed via Homebrew (or `./build.sh` with `~/.local/bin` on `$PATH`), the `browter` CLI manages your config directly:
 
 ```sh
-~/Applications/Browter.app/Contents/MacOS/Browter --check
-~/Applications/Browter.app/Contents/MacOS/Browter --test "https://github.com/acme/repo"
+browter init                                                      # create starter ~/.config/browter/config.json
+browter profiles                                                  # list installed Chrome/Brave/Edge/Firefox profiles
+browter add "github.com/acme" --browser "Google Chrome" --profile "Profile 1"
+browter add "^https://sso\\.acme\\.com" --browser "Google Chrome" --profile "Profile 1" --regex
+browter remove "github.com/acme"
+browter list                                                      # print current fallback and routes
+browter edit                                                      # open config.json in $EDITOR
+browter check                                                     # validate config and resolved browsers
+browter test "https://github.com/acme/repo"                       # dry-run a URL without opening it
 ```
+
+## Debugging
 
 Enable timing logs (`~/Library/Logs/Browter.log`):
 

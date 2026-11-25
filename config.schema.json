@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/marsidev/browter/main/config.schema.json",
+  "title": "Browter Configuration",
+  "description": "Configuration file for Browter (~/.config/browter/config.json).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema URL for editor autocompletion and validation."
+    },
+    "fallback": {
+      "type": "string",
+      "default": "com.apple.Safari",
+      "description": "Browser for unmatched URLs. Accepts a bundle ID (e.g. 'com.brave.Browser'), an app name ('Brave Browser'), or a full .app path.",
+      "examples": [
+        "com.apple.Safari",
+        "com.brave.Browser",
+        "com.google.Chrome",
+        "org.mozilla.firefox",
+        "company.thebrowser.Browser"
+      ]
+    },
+    "unwrapSafeLinks": {
+      "type": "boolean",
+      "default": true,
+      "description": "Inspect the destination URL inside Microsoft Teams and Outlook safe-links to choose the browser, while still opening the original wrapper URL."
+    },
+    "routes": {
+      "type": "array",
+      "default": [],
+      "description": "Ordered list of routing rules. The first matching route wins.",
+      "items": {
+        "type": "object",
+        "required": ["browser"],
+        "additionalProperties": false,
+        "properties": {
+          "browser": {
+            "type": "string",
+            "description": "Target browser bundle ID (e.g. 'com.google.Chrome'), app name ('Google Chrome'), or full .app path.",
+            "examples": [
+              "com.google.Chrome",
+              "com.brave.Browser",
+              "com.apple.Safari",
+              "org.mozilla.firefox",
+              "app.zen-browser.zen",
+              "com.microsoft.edgemac"
+            ]
+          },
+          "profile": {
+            "type": "string",
+            "description": "Optional browser profile name. For Chromium browsers this is the profile directory name (e.g. 'Default', 'Profile 1'); for Firefox/Zen it is the profile name. Run 'browter profiles' to list installed profiles.",
+            "examples": ["Default", "Profile 1", "Profile 2"]
+          },
+          "domains": {
+            "type": "array",
+            "default": [],
+            "description": "Human-friendly domain and path rules: 'example.com' (exact host), '*.example.com' (host and subdomains), '.microsoft' (any host under TLD), 'github.com/org' (host + path prefix).",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "patterns": {
+            "type": "array",
+            "default": [],
+            "description": "Case-insensitive regular expressions matched against the full URL.",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "hints": {
+            "type": "array",
+            "description": "Optional tab-URL substrings used by AppleScript to find an existing Google Chrome window for this profile. Auto-derived from 'domains' when omitted.",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "useAppleScript": {
+            "type": "boolean",
+            "default": true,
+            "description": "When true (default), adds tabs to an already-running Google Chrome window via AppleScript before falling back to spawning Chrome."
+          }
+        }
+      }
+    }
+  }
+}

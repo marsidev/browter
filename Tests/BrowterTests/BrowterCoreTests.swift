@@ -185,4 +185,40 @@ struct BrowterCoreTests {
         #expect(work.profile == "Profile 1")
         #expect(other.browser == "org.mozilla.firefox")
     }
+
+    @Test("addRule and removeRule manage routes cleanly")
+    func addAndRemoveRules() {
+        var config = BrowterConfig(schema: BrowterConfig.defaultSchemaURL)
+
+        #expect(config.addRule("github.com/acme", browser: "com.google.Chrome", profile: "Profile 1") == true)
+        #expect(config.addRule("github.com/acme", browser: "com.google.Chrome", profile: "Profile 1") == false)
+        #expect(config.addRule("*.azure.com", browser: "com.google.Chrome", profile: "Profile 1") == true)
+        #expect(config.addRule("^https://sso\\.acme\\.test", browser: "com.google.Chrome", profile: "Profile 1", isRegex: true) == true)
+        #expect(config.routes.count == 1)
+        #expect(config.routes[0].domains == ["github.com/acme", "*.azure.com"])
+        #expect(config.routes[0].patterns == ["^https://sso\\.acme\\.test"])
+
+        #expect(config.removeRule("*.azure.com") == 1)
+        #expect(config.removeRule("nonexistent.com") == 0)
+        #expect(config.routes.count == 1)
+
+        #expect(config.removeRule("github.com/acme") == 1)
+        #expect(config.removeRule("^https://sso\\.acme\\.test") == 1)
+        #expect(config.routes.isEmpty)
+    }
+
+    @Test("Config round-trips $schema through save and load")
+    func schemaRoundTrip() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("browter-test-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let original = BrowterConfig(
+            schema: BrowterConfig.defaultSchemaURL,
+            fallback: "com.brave.Browser",
+            routes: [RouteConfig(browser: "com.google.Chrome", profile: "Profile 1", domains: ["example.com"])]
+        )
+        try original.save(to: tmp.path)
+        let loaded = try BrowterConfig.load(from: tmp.path)
+        #expect(loaded == original)
+    }
 }

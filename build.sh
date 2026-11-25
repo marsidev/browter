@@ -74,5 +74,8 @@ if [[ "$INSTALL" -eq 1 ]]; then
     rm -rf "$DEST"
     cp -R "$APP" "$DEST"
     "$LSREGISTER" -f "$DEST"
+    if [[ -d "$HOME/.local/bin" ]]; then
+        ln -sf "$DEST/Contents/MacOS/Browter" "$HOME/.local/bin/browter"
+    fi
     echo "Installed $DEST"
 fi
