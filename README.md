@@ -13,7 +13,7 @@ Lightweight, background-only macOS app that acts as your default browser and rou
 
 ## Install
 
-### Homebrew (once published)
+### Homebrew
 
 ```sh
 brew install --cask marsidev/tap/browter
@@ -23,6 +23,14 @@ If the release is not notarized with an Apple Developer ID, clear the quarantine
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Browter.app
+```
+
+Update or uninstall:
+
+```sh
+brew upgrade --cask browter
+brew uninstall --cask browter        # switch Default web browser back first
+brew uninstall --cask --zap browter  # also removes ~/.config/browter, logs, and preferences
 ```
 
 ### Build from source
@@ -35,7 +43,7 @@ cd browter
 ./build.sh
 ```
 
-This builds `build/Browter.app`, ad-hoc signs it, installs it to `~/Applications/Browter.app`, and registers it with Launch Services.
+This builds `build/Browter.app`, ad-hoc signs it, installs it to `~/Applications/Browter.app`, registers it with Launch Services, and symlinks `~/.local/bin/browter` if `~/.local/bin` exists.
 
 ## Configuration
 
@@ -96,12 +104,13 @@ When installed via Homebrew (or `./build.sh` with `~/.local/bin` on `$PATH`), th
 browter init                                                      # create starter ~/.config/browter/config.json
 browter profiles                                                  # list installed Chrome/Brave/Edge/Firefox profiles
 browter add "github.com/acme" --browser "Google Chrome" --profile "Profile 1"
-browter add "^https://sso\\.acme\\.com" --browser "Google Chrome" --profile "Profile 1" --regex
+browter add '^https://sso\.acme\.com' --browser "Google Chrome" --profile "Profile 1" --regex
 browter remove "github.com/acme"
 browter list                                                      # print current fallback and routes
 browter edit                                                      # open config.json in $EDITOR
 browter check                                                     # validate config and resolved browsers
 browter test "https://github.com/acme/repo"                       # dry-run a URL without opening it
+browter version                                                   # print installed version
 ```
 
 ## Debugging
