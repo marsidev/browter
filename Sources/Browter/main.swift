@@ -4,6 +4,26 @@ import BrowterCore
 #endif
 import Foundation
 
+// MARK: - Bundle Resolution
+
+/// Resolves the enclosing `.app` bundle even when invoked through a symlink on `$PATH`
+/// (e.g. `/opt/homebrew/bin/browter` or `~/.local/bin/browter`).
+func appBundle() -> Bundle {
+    if Bundle.main.bundlePath.hasSuffix(".app") {
+        return Bundle.main
+    }
+    if let exe = Bundle.main.executableURL?.resolvingSymlinksInPath() {
+        let candidate = exe
+            .deletingLastPathComponent() // MacOS
+            .deletingLastPathComponent() // Contents
+            .deletingLastPathComponent() // Browter.app
+        if candidate.pathExtension == "app", let bundle = Bundle(url: candidate) {
+            return bundle
+        }
+    }
+    return Bundle.main
+}
+
 // MARK: - Config Path Resolution
 
 func resolveConfigPath() -> String {
@@ -58,7 +78,7 @@ func resolveApplication(for spec: String) -> ResolvedApp? {
     let trimmed = spec.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return nil }
 
-    let ownBundleID = Bundle.main.bundleIdentifier
+    let ownBundleID = appBundle().bundleIdentifier
 
     func wrap(_ url: URL) -> ResolvedApp? {
         let bundle = Bundle(url: url)
@@ -521,7 +541,7 @@ func runCLI(args: [String], configPath: String) -> Int32? {
         return 0
 
     case "version", "--version", "-v":
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+        let version = appBundle().object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
         print("Browter \(version)")
         return 0
 
